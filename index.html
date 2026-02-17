@@ -192,25 +192,35 @@
         statusText.innerText = "Face detected! Adjust if needed.";
     }
 
-    // 4. Download Logic
+ // 4. Download Logic (Original Resolution)
     downloadBtn.addEventListener('click', () => {
         if (!cropper) return;
 
-        // Get cropped canvas
-        // We set specific output size to ensure high quality
-        // 27mm at 300 DPI is approx 319 pixels width
+        // getCroppedCanvas() without 'width' or 'height' automatically 
+        // grabs the exact pixels from the original image.
         const canvas = cropper.getCroppedCanvas({
-            width: 319, 
-            height: 437,
-            fillColor: '#fff', // Fill transparent edges with white
+            fillColor: '#fff', // Fills background with white if crop goes off-edge
             imageSmoothingEnabled: true,
             imageSmoothingQuality: 'high',
         });
 
+        // Convert to Blob (better for large high-res files)
+        canvas.toBlob((blob) => {
+            const link = document.createElement('a');
+            // Name the file
+            link.download = 'cropped_photo_original_size.jpg'; 
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            
+            // Clean up memory
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        }, 'image/jpeg', 1.0); // 1.0 = Maximum Quality (No compression)
+    });
+
         // Download
         const link = document.createElement('a');
         link.download = 'cropped_photo.jpg';
-        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        link.href = canvas.toDataURL('image/jpeg', 1.00);
         link.click();
     });
 </script>
