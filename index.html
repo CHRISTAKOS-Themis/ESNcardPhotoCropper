@@ -192,36 +192,25 @@
         statusText.innerText = "Face detected! Adjust if needed.";
     }
 
- // 4. Download Logic (Original Resolution)
+// 4. Download Logic (MAXIMUM QUALITY)
     downloadBtn.addEventListener('click', () => {
         if (!cropper) return;
 
-        // getCroppedCanvas() without 'width' or 'height' automatically 
-        // grabs the exact pixels from the original image.
+        // "getCroppedCanvas" without width/height options returns 
+        // the crop at the HIGHEST resolution available in the original photo.
         const canvas = cropper.getCroppedCanvas({
-            fillColor: '#fff', // Fills background with white if crop goes off-edge
+            fillColor: '#fff', // Still keep white background for edges
             imageSmoothingEnabled: true,
             imageSmoothingQuality: 'high',
         });
 
-        // Convert to Blob (better for large high-res files)
+        // Download
         canvas.toBlob((blob) => {
             const link = document.createElement('a');
-            // Name the file
-            link.download = 'cropped_photo_original_size.jpg'; 
+            link.download = 'cropped_photo_max_quality.jpg';
             link.href = URL.createObjectURL(blob);
             link.click();
-            
-            // Clean up memory
-            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-        }, 'image/jpeg', 1.0); // 1.0 = Maximum Quality (No compression)
-    });
-
-        // Download
-        const link = document.createElement('a');
-        link.download = 'cropped_photo.jpg';
-        link.href = canvas.toDataURL('image/jpeg', 1.00);
-        link.click();
+        }, 'image/jpeg', 1.0); // 1.0 = Maximum JPEG Quality (100%)
     });
 </script>
 
