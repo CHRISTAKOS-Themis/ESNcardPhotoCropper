@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Cropper (Mobile)</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <style>
+        /* --- MOBILE FIRST CSS --- */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: #111; 
+            color: white; 
+            margin: 0;
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh;
+            overflow: hidden; /* Prevent scrolling while cropping */
+        }
+
+        .header {
+            padding: 15px;
+            text-align: center;
+            background: #222;
+            z-index: 10;
+        }
+
+        .workspace { 
+            flex: 1; 
+            position: relative; 
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* The Image Container - Takes full available space */
+        .img-container { 
+            width: 100%; 
+            height: 100%; 
+            max-height: 80vh;
+        }
+        
+        img { max-width: 100%; }
+
+        /* Hide Preview on Mobile (Too small to be useful) */
+        .preview-container { 
+            display: none; 
+        }
+
+        /* Controls Area - Fixed at bottom */
+        .controls { 
+            padding: 20px; 
+            background: #222; 
+            display: flex; 
+            gap: 10px; 
+            flex-direction: column; /* Stack buttons on mobile */
+        }
+
+        /* Big, Thumb-Friendly Buttons */
+        button, .upload-btn { 
+            padding: 15px; 
+            font-size: 18px; 
+            font-weight: 600;
+            border-radius: 8px; 
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .upload-btn { background: #333; color: #fff; border: 1px solid #555; }
+        #downloadBtn { background: #007bff; color: white; }
+        #downloadBtn:disabled { background: #444; color: #888; }
+
+        input[type="file"] { display: none; }
+        
+        /* Status Text */
+        #status { 
+            font-size: 14px; 
+            color: #aaa; 
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        /* Tablet/Desktop Tweaks */
+        @media (min-width: 768px) {
+            .controls { flex-direction: row; }
+            .preview-container { 
+                display: block; 
+                position: absolute; 
+                top: 20px; 
+                right: 20px; 
+                z-index: 100;
+                background: rgba(0,0,0,0.8);
+                padding: 10px;
+                border-radius: 8px;
+            }
+            .preview-box {
+                width: 108px; /* 27mm * 4 */
+                height: 148px; /* 37mm * 4 */
+                border: 1px solid white;
+                overflow: hidden;
+                background: #333;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div id="status">Loading AI...</div>
+</div>
+
+<div class="workspace">
+    <div class="img-container">
+        <img id="image" src="">
+    </div>
+    
+    <div class="preview-container">
+        <div style="margin-bottom:5px; font-size:12px;">Preview</div>
+        <div class="preview-box"></div> 
+    </div>
+</div>
+
+<div class="controls">
+    <label class="upload-btn">
+        📷 Take Photo / Upload
+        <input type="file" id="imageInput" accept="image/*" disabled>
+    </label>
+    <button id="downloadBtn" disabled>Download Crop</button>
+</div>
+
+<script>
+    // --- CONFIGURATION ---
+    const TARGET_WIDTH_MM = 27;
+    const TARGET_HEIGHT_MM = 37;
+    const ASPECT_RATIO = TARGET_WIDTH_MM / TARGET_HEIGHT_MM; 
+    const ZOOM_FACTOR = 2.2; 
+    
+    // Change to './' if hosting locally
+    const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; 
+
+    let cropper = null;
+    const imageElement = document.getElementById('image');
+    const statusText = document.getElementById('status');
+    const inputElement = document.getElementById('imageInput');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    // 1. Initialize AI
+    async function init() {
+        try {
+            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+            statusText.innerText = "Ready.";
+            inputElement.disabled = false;
+        } catch (e) {
+            statusText.innerText = "Error loading models.";
+        }
+    }
+    init();
+
+    // 2. Handle Upload
+    inputElement.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const url = URL.createObjectURL(file);
+        
+        if (cropper) cropper.destroy();
+        imageElement.src = url;
+        downloadBtn.disabled = true;
+        statusText.innerText = "Detecting face...";
+
+        imageElement.onload = async () => {
+            // Initialize Cropper immediately
+            cropper = new Cropper(imageElement, {
+                aspectRatio: ASPECT_RATIO,
+                viewMode: 1, 
+                dragMode: 'move', // Better for touch
+                preview: '.preview-box',
+                autoCropArea: 0.8,
+                ready() {
+                    downloadBtn.disabled = false;
+                }
+            });
+
+            // Run AI
+            await detectAndAutoCrop();
+        };
+    });
+
+    // 3. Smart Crop Logic
+    async function detectAndAutoCrop() {
+        // Use TinyFace for mobile speed
+        const detections = await faceapi.detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions());
+
+        if (!detections.length) {
+            statusText.innerText = "No face found. Please crop manually.";
+            return;
+        }
+
+        const face = detections[0].box;
+        
+        const imgW = imageElement.naturalWidth;
+        const imgH = imageElement.naturalHeight;
+
+        // Calculate Box
+        const faceH = face.height;
+        const idealH = faceH * ZOOM_FACTOR;
+        const idealW = idealH * ASPECT_RATIO;
+        
+        // Anchor Logic (Shift Up)
+        const faceCenterX = face.x + (face.width / 2);
+        const faceCenterY = face.y + (face.height / 2);
+        const shiftY = idealH * 0.12; 
+        const anchorY = faceCenterY - shiftY;
+
+        let left = faceCenterX - (idealW / 2);
+        let top = anchorY - (idealH / 2);
+
+        // Simple Bounds Check
+        if (top < 0) top = 0;
+        if (left < 0) left = 0;
+        if (left + idealW > imgW) left = imgW - idealW;
+        if (top + idealH > imgH) top = imgH - idealH;
+
+        cropper.setData({
+            x: left,
+            y: top,
+            width: idealW,
+            height: idealH
+        });
+
+        statusText.innerText = "Face detected! Drag to adjust.";
+    }
+
+    // 4. Download (Max Quality)
+    downloadBtn.addEventListener('click', () => {
+        if (!cropper) return;
+        
+        statusText.innerText = "Processing...";
+        
+        const canvas = cropper.getCroppedCanvas({
+            fillColor: '#fff',
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high',
+        });
+
+        canvas.toBlob((blob) => {
+            const link = document.createElement('a');
+            link.download = 'mobile_crop.jpg';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            statusText.innerText = "Downloaded!";
+        }, 'image/jpeg', 1.0);
+    });
+</script>
+
+</body>
+</html>
